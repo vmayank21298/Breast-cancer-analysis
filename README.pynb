@@ -1,0 +1,173 @@
+# Importing the Necessary Libraries
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+%matplotlib inline
+import seaborn as sns
+import warnings
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import MinMaxScaler
+warnings.filterwarnings('ignore')
+from scipy.linalg import eigh
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, davies_bouldin_score
+from sklearn import metrics
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from pylab import rcParams
+from sklearn.decomposition import FactorAnalysis
+from sklearn.model_selection import train_test_split
+
+df = pd.read_csv('BC.csv')
+
+df.head(10)
+
+df.info()
+
+df.drop('Unnamed: 32',axis=1,inplace=True)
+
+df2=df.copy()
+
+df2.keys()
+
+df2.head(10)
+
+plt.figure(figsize = (8, 4))
+sns.countplot(df2['diagnosis'])
+
+# Finding the correlation
+
+corr = df2.corr()
+corr
+
+## Dropping the columns which does not have verymuch significance
+
+df2.drop('id',axis=1,inplace=True)
+
+df2.head(8)
+
+## Converting the object type data to float type data so that it could be fitted in our model
+
+df3=pd.get_dummies(df2.loc[:,'diagnosis'])
+df3
+
+diag= df2['diagnosis']
+
+# Standardising the data
+
+### so that our various columns becomes in same unit range and variation between them become less and our algorythm can predict more precisely.
+
+scaler=StandardScaler()
+scaled_data = scaler.fit_transform(df2.loc[:, df2.columns != 'diagnosis'])
+
+# Finding out the principal components
+
+x_pca=PCA(n_components=30).fit_transform(scaled_data)
+
+x_pca.shape  ##Number of principal components are 3.
+
+pca=PCA(n_components=30)
+pca.fit(scaled_data)
+x_pca=pca.transform(scaled_data)
+
+# Finding out the eigen values and eigen vectors and plotting them
+
+eigenvalues, eigenvectors = pca.explained_variance_, pca.components_
+
+plt.figure(figsize = (10, 6))
+plt.plot(eigenvalues,'-o')
+plt.xlabel('Number or Features')
+plt.ylabel('Eigen Values')
+plt.title('Eigenvalues against number of Features', fontdict={'size':15});
+
+# Kaiser Rule
+
+kaiser_rule_components = [val for val in eigenvalues if val>1]
+print('According to Kaiser Rule %i components are to be retained'%len(kaiser_rule_components))
+
+print('According to Conditional Number rule %i components are to be retained'%len([eigenvalues.max()/val for val in eigenvalues if val<10]))
+
+# Plotting the Principal components with there comparision
+
+x_pca = PCA(n_components=3).fit_transform(scaled_data)
+p_df = pd.DataFrame(np.vstack((x_pca.T, diag.values)).T, columns=['PC1', 'PC2', 'PC3', 'Label'])
+
+sns.FacetGrid(p_df, hue = 'Label', size = 6).map(sns.distplot, 'PC1')
+
+sns.FacetGrid(p_df, hue = 'Label', size = 6).map(sns.distplot, 'PC2')
+
+sns.FacetGrid(p_df, hue = 'Label', size = 6).map(sns.distplot, 'PC3')
+
+fig = plt.subplot(1, 3, 1)
+fig.figure.set_figheight(5)
+fig.figure.set_figwidth(14)
+
+
+sns.scatterplot(p_df['PC1'],p_df['PC2'],hue = p_df['Label'],cmap='plasma')
+plt.xlabel('1st principle component')
+plt.ylabel('2nd principle component')
+
+
+plt.subplot(1, 3, 2)
+sns.scatterplot(p_df['PC2'], p_df['PC3'], hue = p_df['Label'], cmap = 'plasma')
+plt.xlabel('2nd principle component')
+plt.ylabel('3rd principle component')
+
+plt.subplot(1, 3, 3)
+sns.scatterplot(p_df['PC1'], p_df['PC3'], hue = p_df['Label'], cmap = 'plasma')
+plt.xlabel('1st principle component')
+plt.ylabel('3rd principle component');
+
+df2.head()
+
+# Factor Analysis and fitting the data in K-Means algorythm
+
+FA =  FactorAnalysis(20, 0.02)
+FA.fit(scaled_data)
+FA_data = FA.transform(scaled_data)
+
+X = p_df.drop('Label',axis=1)
+y = df3['B']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42)
+
+
+# Determining the number of clusters
+
+sse=[]
+k = [2, 3, 5]
+for i in k:
+    km=KMeans(n_clusters=i, random_state=np.random.randint(1))
+    y_pred = km.fit_predict(df2.drop(['diagnosis'], axis = 1))
+    sse.append(davies_bouldin_score(df2.drop(['diagnosis'], axis = 1), y_pred))
+
+plt.plot(k, sse, 'o-')
+plt.ylabel('Davies Bouldin score')
+plt.xlabel('Number of clusters')
+print('k=2 is the smallest ')
+
+# Checking the Purity and Accuracy of the model
+
+# km.cluster_centers_.ravel()
+model = KMeans(2, n_init = 10, max_iter=1000, random_state=42).fit(X_train, y_train)
+preds = model.predict(X_test)
+
+accuracy_score(y_test, preds)
+
+from scipy.optimize import linear_sum_assignment
+def purity_accuracy(y_true, y_pred):
+    contingency_matrix = metrics.cluster.contingency_matrix(y_true, y_pred)
+    row_ind, col_ind = linear_sum_assignment(-contingency_matrix)
+    return contingency_matrix[row_ind, col_ind].sum() / np.sum(contingency_matrix)
+
+purity_accuracy(y_test, preds)*100
+
+u_labels = np.unique(preds)
+
+for i in u_labels:
+    plt.scatter(X_test.values[preds == i, 0] , X_test.values[preds== i, 1] , label = i)
+    plt.scatter(model.cluster_centers_[:, 0], model.cluster_centers_[:, 1], c='black', s = 40)
+plt.legend()
+plt.ylabel('PC2')
+plt.xlabel('PC1')
+plt.show()
+
